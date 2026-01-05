@@ -260,12 +260,28 @@ main.appendChild(el("div",{class:"flex items-center justify-between mb-4"},[
    ========================= */
 async function renderDashboard(area){
   clear(area);
-  area.appendChild(el("h2",{class:"text-2xl font-semibold mb-4 text-blue-700"},["Welcome to Studies"]));
+
+  area.appendChild(
+    el("h2",{class:"text-2xl font-semibold mb-4 text-blue-700"},
+      ["Welcome to Studies"])
+  );
+
   const grid = el("div",{class:"grid md:grid-cols-2 gap-4"});
+
+  // Common tiles (Admin + Student)
   grid.appendChild(tile("Courses", ()=> pushView("courses")));
   grid.appendChild(tile("Lectures", ()=> pushView("lectures")));
   grid.appendChild(tile("Materials", ()=> pushView("materials")));
   grid.appendChild(tile("Tests", ()=> pushView("tests")));
+
+  // 🔐 Admin-only tiles
+  if(state.user.role === "admin"){
+    grid.appendChild(tile("Create Course", ()=> pushView("admin.createCourse")));
+    grid.appendChild(tile("Upload Lecture", ()=> pushView("admin.uploadLecture")));
+    grid.appendChild(tile("Upload Material", ()=> pushView("admin.uploadMaterial")));
+    grid.appendChild(tile("Users", ()=> pushView("admin.users")));
+  }
+
   area.appendChild(grid);
 }
 
@@ -873,6 +889,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
