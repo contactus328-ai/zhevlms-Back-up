@@ -220,7 +220,10 @@ main.appendChild(el("div",{class:"flex items-center justify-between mb-4"},[
   container.appendChild(aside); container.appendChild(main); app.appendChild(container);
 
   // routing
-  if(state.view === "dashboard") return renderDashboard(main);
+  if(state.view === "dashboard"){
+  renderDashboard(main);
+  return;
+}
   if(state.view === "admin.users") return renderAdminUsers(main);
   if(state.view === "admin.createCourse") return renderCreateCourse(main);
   if(state.view === "admin.uploadLecture") return renderUploadLecture(main);
@@ -870,5 +873,6 @@ render();
 </script>
 </body>
 </html>
+
 
 
