@@ -33,20 +33,7 @@
     .tile:hover{ transform:translateY(-6px); box-shadow:0 10px 30px rgba(16,24,40,0.08); cursor:pointer; }
     .text-link{ color:var(--primary); text-decoration:underline; cursor:pointer; }
     .z-top{ z-index:9999; }
-    @media (max-width:768px){
-    aside{
-    position:fixed;
-    left:-100%;
-    top:0;
-    height:100vh;
-    width:80%;
-    transition:.3s;
-    z-index:9999;
-  }
-  body.show-sidebar aside{
-    left:0;
-  }
-}
+    @media (max-width:768px){ .grid-cols-4{ grid-template-columns:1fr; } .sticky{ position:static; } }
   </style>
 </head>
 
@@ -169,7 +156,7 @@ async function render(){
   // MAIN LAYOUT: Sidebar + Content
   const container = el("div",{class:"grid md:grid-cols-4 grid-cols-1 gap-6"});
   // Sidebar: Dashboard only + role-specific admin tools (but NOT Courses/Lectures/Materials/Tests)
-  const aside = el("aside",{class:"hidden md:block col-span-1 card md:sticky md:top-6 p-4"});
+  const aside = el("aside",{class:"col-span-1 card sticky top-6 p-4"});
   aside.appendChild(el("div",{class:"text-xl font-bold text-blue-700 mb-3"},["Studies"]));
   aside.appendChild(el("div",{class:"font-semibold"},[state.user.name]));
   aside.appendChild(el("div",{class:"small-muted text-sm mb-3"},[state.user.email + " • " + state.user.role]));
@@ -199,31 +186,16 @@ nav.appendChild(createTestBtn);
   aside.appendChild(logout);
 
   // Main content
- const menuBtn = el("button",{ class:"md:hidden btn-outline mr-2" },["☰"]);
-menuBtn.onclick = ()=> document.body.classList.toggle("show-sidebar");
-
-const main = el("main",{class:"col-span-3 card p-6"});
-main.appendChild(el("div",{class:"flex items-center justify-between mb-4"},[
-  el("div",{class:"flex items-center"},[
-    menuBtn,
-    (()=>{ 
-      const b = el("button",{class:"btn-outline text-sm ml-2"},["⬅ Back"]); 
-      b.addEventListener("click", back); 
-      return b; 
-    })()
-  ]),
-  el("div",{class:"text-xl font-semibold"},[
-    state.view === "dashboard" ? "Dashboard" : state.view
-  ])
-]));
+  const main = el("main",{class:"col-span-3 card p-6"});
+  main.appendChild(el("div",{class:"flex items-center justify-between mb-4"},[
+    (()=>{ const b = el("button",{class:"btn-outline text-sm"},["⬅ Back"]); b.addEventListener("click", back); return b; })(),
+    el("div",{class:"text-xl font-semibold"},[ state.view === "dashboard" ? "Dashboard" : state.view ])
+  ]));
 
   container.appendChild(aside); container.appendChild(main); app.appendChild(container);
 
   // routing
-  if(state.view === "dashboard"){
-  renderDashboard(main);
-  return;
-}
+  if(state.view === "dashboard") return renderDashboard(main);
   if(state.view === "admin.users") return renderAdminUsers(main);
   if(state.view === "admin.createCourse") return renderCreateCourse(main);
   if(state.view === "admin.uploadLecture") return renderUploadLecture(main);
@@ -260,28 +232,12 @@ main.appendChild(el("div",{class:"flex items-center justify-between mb-4"},[
    ========================= */
 async function renderDashboard(area){
   clear(area);
-
-  area.appendChild(
-    el("h2",{class:"text-2xl font-semibold mb-4 text-blue-700"},
-      ["Welcome to Studies"])
-  );
-
+  area.appendChild(el("h2",{class:"text-2xl font-semibold mb-4 text-blue-700"},["Welcome to Studies"]));
   const grid = el("div",{class:"grid md:grid-cols-2 gap-4"});
-
-  // Common tiles (Admin + Student)
   grid.appendChild(tile("Courses", ()=> pushView("courses")));
   grid.appendChild(tile("Lectures", ()=> pushView("lectures")));
   grid.appendChild(tile("Materials", ()=> pushView("materials")));
   grid.appendChild(tile("Tests", ()=> pushView("tests")));
-
-  // 🔐 Admin-only tiles
-  if(state.user.role === "admin"){
-    grid.appendChild(tile("Create Course", ()=> pushView("admin.createCourse")));
-    grid.appendChild(tile("Upload Lecture", ()=> pushView("admin.uploadLecture")));
-    grid.appendChild(tile("Upload Material", ()=> pushView("admin.uploadMaterial")));
-    grid.appendChild(tile("Users", ()=> pushView("admin.users")));
-  }
-
   area.appendChild(grid);
 }
 
@@ -889,8 +845,3 @@ render();
 </script>
 </body>
 </html>
-
-
-
-
-
