@@ -166,15 +166,24 @@ const aside = el("aside",{
 });
 
 hamburger.addEventListener("click",()=>{
-  aside.classList.toggle("hidden");
+  const isOpen = !aside.classList.contains("hidden");
+  const overlay = document.getElementById("menu-overlay");
 
-  let overlay = document.getElementById("menu-overlay");
-  if(!overlay){
-    overlay = el("div",{id:"menu-overlay", class:"fixed inset-0 bg-black/40 z-40 md:hidden"});
-    overlay.addEventListener("click",()=>{
-      aside.classList.add("hidden");
-      overlay.remove();
-    });
+  if(isOpen){
+    aside.classList.add("hidden");
+    overlay && overlay.remove();
+  } else {
+    aside.classList.remove("hidden");
+    if(!overlay){
+      const ov = el("div",{id:"menu-overlay", class:"fixed inset-0 bg-black/40 z-40 md:hidden"});
+      ov.addEventListener("click",()=>{
+        aside.classList.add("hidden");
+        ov.remove();
+      });
+      document.body.appendChild(ov);
+    }
+  }
+});
     document.body.appendChild(overlay);
   } else {
     overlay.remove();
@@ -884,6 +893,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
