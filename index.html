@@ -167,6 +167,18 @@ const aside = el("aside",{
 
 hamburger.addEventListener("click",()=>{
   aside.classList.toggle("hidden");
+
+  let overlay = document.getElementById("menu-overlay");
+  if(!overlay){
+    overlay = el("div",{id:"menu-overlay", class:"fixed inset-0 bg-black/40 z-40 md:hidden"});
+    overlay.addEventListener("click",()=>{
+      aside.classList.add("hidden");
+      overlay.remove();
+    });
+    document.body.appendChild(overlay);
+  } else {
+    overlay.remove();
+  }
 });
   aside.appendChild(el("div",{class:"text-xl font-bold text-blue-700 mb-3"},["Studies"]));
   aside.appendChild(el("div",{class:"font-semibold"},[state.user.name]));
@@ -872,6 +884,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
