@@ -161,18 +161,12 @@ const hamburger = el("button",{
 },["☰ Menu"]);
 
 const aside = el("aside",{
-  class:"fixed inset-y-0 left-0 w-72 bg-white shadow-xl z-top transform -translate-x-full transition-transform duration-300 md:static md:translate-x-0 md:shadow-none md:col-span-1",
+  class:"col-span-1 card p-4 hidden md:block",
   id:"sidebar"
 });
 
-const overlay = el("div",{
-  class:"fixed inset-0 bg-black/40 z-40 hidden md:hidden",
-  id:"drawerOverlay"
-});
-
 hamburger.addEventListener("click",()=>{
-  aside.classList.toggle("-translate-x-full");
-  overlay.classList.toggle("hidden");
+  aside.classList.toggle("hidden");
 });
 
 overlay.addEventListener("click",()=>{
@@ -885,6 +879,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
