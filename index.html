@@ -168,13 +168,6 @@ const aside = el("aside",{
 hamburger.addEventListener("click",()=>{
   aside.classList.toggle("hidden");
 });
-
-overlay.addEventListener("click",()=>{
-  aside.classList.add("-translate-x-full");
-  overlay.classList.add("hidden");
-});
-
-app.appendChild(overlay);
   aside.appendChild(el("div",{class:"text-xl font-bold text-blue-700 mb-3"},["Studies"]));
   aside.appendChild(el("div",{class:"font-semibold"},[state.user.name]));
   aside.appendChild(el("div",{class:"small-muted text-sm mb-3"},[state.user.email + " • " + state.user.role]));
@@ -879,10 +872,6 @@ render();
 </script>
 </body>
 </html>
-
-
-
-
 
 
 
