@@ -197,7 +197,7 @@ nav.appendChild(createTestBtn);
   aside.appendChild(logout);
 
   // Main content
-  const main = el("main",{class:"col-span-3 card p-6"});
+  const main = el("main",{class:"col-span-1 md:col-span-3 card p-4 md:p-6"});
   main.appendChild(el("div",{class:"flex items-center justify-between mb-4"},[
     (()=>{ const b = el("button",{class:"btn-outline text-sm"},["⬅ Back"]); b.addEventListener("click", back); return b; })(),
     el("div",{class:"text-xl font-semibold"},[ state.view === "dashboard" ? "Dashboard" : state.view ])
@@ -859,5 +859,6 @@ render();
 </script>
 </body>
 </html>
+
 
 
