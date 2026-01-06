@@ -161,12 +161,12 @@ const hamburger = el("button",{
 },["☰ Menu"]);
 
 const aside = el("aside",{
-  class:"col-span-1 card p-4 hidden md:block",
+  class:"fixed inset-y-0 left-0 w-72 bg-white shadow-xl z-top transform -translate-x-full transition-transform duration-300 md:static md:translate-x-0 md:shadow-none md:col-span-1",
   id:"sidebar"
 });
 
 hamburger.addEventListener("click",()=>{
-  aside.classList.toggle("hidden");
+  aside.classList.toggle("-translate-x-full");
 });
   aside.appendChild(el("div",{class:"text-xl font-bold text-blue-700 mb-3"},["Studies"]));
   aside.appendChild(el("div",{class:"font-semibold"},[state.user.name]));
@@ -872,6 +872,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
