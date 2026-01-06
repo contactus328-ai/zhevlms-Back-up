@@ -173,7 +173,7 @@ hamburger.addEventListener("click",()=>{
   aside.appendChild(el("div",{class:"small-muted text-sm mb-3"},[state.user.email + " • " + state.user.role]));
 
   // minimal left nav: Dashboard + admin pages (no Courses/Lectures/Materials/Tests entries)
-  const nav = el("div",{class:"space-y-2 mb-4"});
+  const nav = el("div",{class:"space-y-2 mb-4 flex flex-col"});
   const addNavBtn = (label, view) => { const b = el("button",{class:"btn-outline w-full text-left"},[label]); b.addEventListener("click", ()=> pushView(view)); nav.appendChild(b); };
   addNavBtn("Dashboard", "dashboard");
   if(state.user.role === "admin"){
@@ -859,6 +859,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
