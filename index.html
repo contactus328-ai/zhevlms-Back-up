@@ -282,7 +282,7 @@ async function renderCourses(area){
     const card = el("div",{class:"card p-3"});
     card.appendChild(el("div",{class:"font-semibold text-blue-700"},[c.title + (c.std ? " • Std " + c.std : "")]));
     if(c.description) card.appendChild(el("div",{class:"text-sm small-muted mb-2"},[c.description]));
-    const actions = el("div",{class:"flex gap-2 mt-2"});
+    const actions = el("div",{class:"flex flex-wrap gap-2 mt-2"});
     const b1 = el("button",{class:"btn-outline text-sm"} ,["Lectures"]);
     b1.addEventListener("click", ()=> { document.getElementById("app").setAttribute("data-active-course", c.id); pushView("lectures"); });
     const b2 = el("button",{class:"btn-outline text-sm"} ,["Materials"]);
@@ -412,12 +412,12 @@ async function renderLectures(area){
   if(items.length===0){ area.appendChild(el("div",{class:"text-gray-500"},["No lectures found"])); return; }
   const list = el("div",{class:"space-y-3"});
   items.forEach(l=>{
-    const row = el("div",{class:"card p-3 flex justify-between items-center"});
+    const row = el("div",{class:"card p-3 flex flex-col md:flex-row md:justify-between md:items-center gap-2"});
     row.appendChild(el("div",{},[
       el("div",{class:"font-medium text-blue-700"},[l.title]),
       el("div",{class:"text-xs small-muted"},[l.filename || ""])
     ]));
-    const actions = el("div",{class:"flex gap-2 items-center"});
+    const actions = el("div",{class:"flex flex-wrap gap-2 items-center"});
     const open = el("a",{href:l.data_url, target:"_blank", class:"text-link"},["Open"]);
     actions.appendChild(open);
     // delete for admin
@@ -732,7 +732,7 @@ async function renderAdminUsers(area){
   layout.appendChild(left);
 
   // right: search & select students
-  const right = el("div",{class:"col-span-2 card p-3"});
+  const right = el("div",{class:"col-span-1 md:col-span-2 card p-3"});
   right.appendChild(el("h4",{class:"font-semibold mb-2 text-blue-700"},["Find Student"]));
   const search = el("input",{class:"input mb-2", placeholder:"Search by name or email..."});
   const select = el("select",{class:"input mb-2"}); select.appendChild(el("option",{value:""},["-- Select Student --"]));
@@ -872,6 +872,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
