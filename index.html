@@ -198,11 +198,16 @@ nav.appendChild(createTestBtn);
   } else {
     addNavBtn("Change Password","student.changePassword");
   }
-  aside.appendChild(nav);
+aside.appendChild(nav);
 
-  const logout = el("button",{class:"btn-outline-danger w-full"},["Logout"]);
-  logout.addEventListener("click", ()=> { state.user=null; state.view="login"; state.history=[]; render(); });
-  aside.appendChild(logout);
+const logout = el("button",{class:"btn-outline-danger w-full mt-2"},["Logout"]);
+logout.addEventListener("click", ()=> { 
+  state.user=null; 
+  state.view="login"; 
+  state.history=[]; 
+  render(); 
+});
+aside.appendChild(logout);
 
   // Main content
   const main = el("main",{class:"col-span-1 md:col-span-3 card p-4 md:p-6"});
@@ -867,6 +872,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
