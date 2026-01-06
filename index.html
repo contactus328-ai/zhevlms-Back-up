@@ -161,7 +161,7 @@ const hamburger = el("button",{
 },["☰ Menu"]);
 
 const aside = el("aside",{
-  class:"col-span-1 card p-4 hidden md:block",
+  class:"fixed inset-y-0 left-0 w-72 bg-white shadow-xl p-4 hidden z-50 md:static md:block md:shadow-none md:w-auto md:col-span-1 card",
   id:"sidebar"
 });
 
@@ -872,6 +872,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
