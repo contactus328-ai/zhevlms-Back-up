@@ -153,10 +153,21 @@ async function render(){
     app.appendChild(wrap); return;
   }
 
-  // MAIN LAYOUT: Sidebar + Content
-  const container = el("div",{class:"grid md:grid-cols-4 grid-cols-1 gap-6"});
-  // Sidebar: Dashboard only + role-specific admin tools (but NOT Courses/Lectures/Materials/Tests)
-  const aside = el("aside",{class:"col-span-1 card sticky top-6 p-4"});
+  // MAIN LAYOUT: Mobile-friendly layout with hamburger
+const container = el("div",{class:"grid grid-cols-1 md:grid-cols-4 gap-4"});
+
+const hamburger = el("button",{
+  class:"md:hidden btn-outline mb-2"
+},["☰ Menu"]);
+
+const aside = el("aside",{
+  class:"col-span-1 card p-4 hidden md:block",
+  id:"sidebar"
+});
+
+hamburger.addEventListener("click",()=>{
+  aside.classList.toggle("hidden");
+});
   aside.appendChild(el("div",{class:"text-xl font-bold text-blue-700 mb-3"},["Studies"]));
   aside.appendChild(el("div",{class:"font-semibold"},[state.user.name]));
   aside.appendChild(el("div",{class:"small-muted text-sm mb-3"},[state.user.email + " • " + state.user.role]));
