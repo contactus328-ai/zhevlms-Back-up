@@ -203,7 +203,7 @@ nav.appendChild(createTestBtn);
     el("div",{class:"text-xl font-semibold"},[ state.view === "dashboard" ? "Dashboard" : state.view ])
   ]));
 
-  container.appendChild(aside); container.appendChild(main); app.appendChild(container);
+  app.appendChild(hamburger);container.appendChild(aside);container.appendChild(main);app.appendChild(container);
 
   // routing
   if(state.view === "dashboard") return renderDashboard(main);
@@ -856,3 +856,4 @@ render();
 </script>
 </body>
 </html>
+
