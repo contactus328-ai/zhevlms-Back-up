@@ -1,0 +1,883 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Studies LMS</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+  <style>
+    :root{
+      --primary:#2563eb;
+      --primary-dark:#1e40af;
+      --muted:#6b7280;
+      --card:#ffffff;
+    }
+    body{
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      background: linear-gradient(180deg,#f7fbff 0%, #f3f6fb 100%);
+      margin:0;padding:14px;
+    }
+    .card{ background:var(--card); border-radius:12px; padding:16px; box-shadow:0 6px 22px rgba(8,15,52,0.06); }
+    .btn-primary{ background:var(--primary); color:#fff; padding:8px 12px; border-radius:8px; border:none; }
+    .btn-primary:hover{ background:var(--primary-dark); }
+    .btn-outline{ border:1px solid var(--primary); color:var(--primary); padding:8px 12px; border-radius:8px; background:transparent; }
+    .btn-outline-danger{ border:1px solid #ef4444; color:#ef4444; padding:8px 12px; border-radius:8px; background:transparent; }
+    .small-muted{ color:var(--muted); font-size:0.9rem; }
+    .input{ width:100%; padding:8px; border-radius:8px; border:1px solid #e5e7eb; }
+    .tile{ transition:transform .12s ease, box-shadow .12s ease; }
+    .tile:hover{ transform:translateY(-6px); box-shadow:0 10px 30px rgba(16,24,40,0.08); cursor:pointer; }
+    .text-link{ color:var(--primary); text-decoration:underline; cursor:pointer; }
+    .z-top{ z-index:9999; }
+    @media (max-width:768px){ .grid-cols-4{ grid-template-columns:1fr; } .sticky{ position:static; } aside{ width:100%; } }
+  </style>
+</head>
+
+<body>
+  <div id="app" class="max-w-6xl mx-auto"></div>
+
+<script>
+/* =========================
+   Studies LMS — Single File
+   All requested changes applied:
+   - STD dropdown (Std 1–12) in Create User & Create Course
+   - Admin edit/view tests fixed (uses questions column)
+   - Sidebar DOES NOT show Courses/Lectures/Materials/Tests under Dashboard
+   - Delete with confirmation for Courses/Lectures/Materials/Tests/Users
+   - Student Course view has 4th button "Attachments"
+   ========================= */
+
+/* -------------------------
+   Supabase config (use your keys)
+   ------------------------- */
+const SUPABASE_URL = "https://npfpinlrlomuciruqura.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZnBpbmxybG9tdWNpcnVxdXJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxMzk2ODMsImV4cCI6MjA3OTcxNTY4M30.JEAMycHqo7ebDXSavR0gMlRv82ByoCibdn_LMKBHLTE";
+const STORAGE_BUCKET = "lms-files";
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* -------------------------
+   DOM helpers
+   ------------------------- */
+function el(tag="div", attrs={}, children=[]){
+  const d = document.createElement(tag);
+  for(const k in attrs){
+    if(k==="class") d.className = attrs[k];
+    else if(k==="id") d.id = attrs[k];
+    else if(k==="type") d.type = attrs[k];
+    else if(k==="placeholder") d.placeholder = attrs[k];
+    else d.setAttribute(k, attrs[k]);
+  }
+  (children||[]).forEach(c => { if(typeof c === "string") d.appendChild(document.createTextNode(c)); else d.appendChild(c); });
+  return d;
+}
+function clear(n){ while(n && n.firstChild) n.removeChild(n.firstChild); }
+function uid(p=""){ return p + Math.random().toString(36).slice(2,10); }
+
+/* -------------------------
+   Global state & cache
+   ------------------------- */
+let state = { user:null, view:"login", history:[], cache:{ courses:null, tests:null } };
+function pushView(v){ state.history.push(state.view); state.view = v; render(); }
+function back(){ if(state.history.length) state.view = state.history.pop(); else state.view="dashboard"; render(); }
+
+/* -------------------------
+   Cache helpers
+   ------------------------- */
+async function getCourses(force=false){
+  if(!state.cache.courses || force){
+
+    let query = supabaseClient
+      .from("courses")
+      .select("*")
+      .order("created_at",{ascending:false});
+
+    // 🔐 Student sees ONLY courses matching their Std
+    if (state.user?.role === "student" && state.user?.std) {
+      query = query.eq("std", state.user.std);
+    }
+
+    const { data } = await query;
+    state.cache.courses = data || [];
+  }
+
+  return state.cache.courses;
+}
+async function getTests(force=false){
+  if(!state.cache.tests || force){
+    const { data } = await supabaseClient.from("tests").select("*").order("created_at",{ascending:false});
+    state.cache.tests = data || [];
+  }
+  return state.cache.tests;
+}
+
+/* -------------------------
+   small ui
+   ------------------------- */
+function tile(title, onClick){
+  const t = el("div",{class:"card tile p-4"},[
+    el("div",{class:"font-semibold text-xl text-blue-700"},[title]),
+    el("div",{class:"small-muted text-sm mt-1"} ,["Click to manage " + title.toLowerCase()])
+  ]);
+  t.addEventListener("click", onClick);
+  return t;
+}
+
+/* =========================
+   RENDER (MAIN ROUTER)
+   ========================= */
+async function render(){
+  const app = document.getElementById("app");
+  clear(app);
+
+  // LOGIN PAGE
+  if(!state.user){
+    const wrap = el("div",{class:"max-w-md mx-auto card mt-20"});
+    wrap.appendChild(el("h1",{class:"text-3xl font-bold text-center mb-2 text-blue-700"},["Studies"]));
+    wrap.appendChild(el("p",{class:"text-sm small-muted text-center mb-4"},["Simple LMS — Login"]));
+    const inEmail = el("input",{class:"input mb-2", placeholder:"Email"});
+    const inPw = el("input",{class:"input mb-2", type:"password", placeholder:"Password"});
+    const btn = el("button",{class:"btn-primary w-full"},["Login"]);
+    btn.addEventListener("click", async ()=>{
+      const em = inEmail.value.trim().toLowerCase(), pw = inPw.value;
+      if(!em || !pw) return alert("Enter credentials");
+      const { data, error } = await supabaseClient.from("user_profiles").select("*").eq("email", em).maybeSingle();
+      if(error) return alert("Login error");
+      if(!data || data.password !== pw) return alert("Invalid credentials");
+      state.user = data; state.cache.courses = null; state.view = "dashboard"; state.history = []; render();
+    });
+    wrap.appendChild(inEmail); wrap.appendChild(inPw); wrap.appendChild(btn);
+    app.appendChild(wrap); return;
+  }
+
+  // MAIN LAYOUT: Mobile-friendly layout with hamburger
+const container = el("div",{class:"grid grid-cols-1 md:grid-cols-4 gap-4"});
+
+const hamburger = el("button",{
+  class:"md:hidden btn-outline mb-2"
+},["☰ Menu"]);
+
+const aside = el("aside",{
+  class:"col-span-1 card p-4 hidden md:block",
+  id:"sidebar"
+});
+
+hamburger.addEventListener("click",()=>{
+  aside.classList.toggle("hidden");
+});
+  aside.appendChild(el("div",{class:"text-xl font-bold text-blue-700 mb-3"},["Studies"]));
+  aside.appendChild(el("div",{class:"font-semibold"},[state.user.name]));
+  aside.appendChild(el("div",{class:"small-muted text-sm mb-3"},[state.user.email + " • " + state.user.role]));
+
+  // minimal left nav: Dashboard + admin pages (no Courses/Lectures/Materials/Tests entries)
+  const nav = el("div",{class:"space-y-2 mb-4 flex flex-col"});
+  const addNavBtn = (label, view) => { 
+  const b = el("button",{class:"btn-outline w-full text-left"},[label]); 
+  b.addEventListener("click", ()=>{ 
+    pushView(view); 
+    const sb = document.getElementById("sidebar");
+    if(sb && window.innerWidth < 768) sb.classList.add("hidden");
+  }); 
+  nav.appendChild(b); 
+};
+  addNavBtn("Dashboard", "dashboard");
+  if(state.user.role === "admin"){
+    addNavBtn("Users", "admin.users");
+    addNavBtn("Create Course", "admin.createCourse");
+    addNavBtn("Upload Lecture", "admin.uploadLecture");
+    addNavBtn("Upload Material", "admin.uploadMaterial");
+    const createTestBtn = el("button",{class:"btn-outline w-full text-left"},["Create Test"]);
+    createTestBtn.addEventListener("click", ()=>{
+    window.tempEditTest = null;   // ← IMPORTANT: reset edit mode
+    pushView("admin.createTest");
+});
+nav.appendChild(createTestBtn);
+  } else {
+    addNavBtn("Change Password","student.changePassword");
+  }
+aside.appendChild(nav);
+
+const logout = el("button",{class:"btn-outline-danger w-full mt-2"},["Logout"]);
+logout.addEventListener("click", ()=> { 
+  state.user=null; 
+  state.view="login"; 
+  state.history=[]; 
+  render(); 
+});
+aside.appendChild(logout);
+
+  // Main content
+  const main = el("main",{class:"col-span-1 md:col-span-3 card p-4 md:p-6"});
+  main.appendChild(el("div",{class:"flex items-center justify-between mb-4"},[
+    (()=>{ const b = el("button",{class:"btn-outline text-sm"},["⬅ Back"]); b.addEventListener("click", back); return b; })(),
+    el("div",{class:"text-xl font-semibold"},[ state.view === "dashboard" ? "Dashboard" : state.view ])
+  ]));
+
+  app.appendChild(hamburger);
+  container.appendChild(aside);
+  container.appendChild(main);
+  app.appendChild(container);
+
+  // routing
+  if(state.view === "dashboard") return renderDashboard(main);
+  if(state.view === "admin.users") return renderAdminUsers(main);
+  if(state.view === "admin.createCourse") return renderCreateCourse(main);
+  if(state.view === "admin.uploadLecture") return renderUploadLecture(main);
+  if(state.view === "admin.uploadMaterial") return renderUploadMaterial(main);
+  if(state.view === "admin.createTest") return renderCreateTest(main);
+  if(state.view === "courses") return renderCourses(main);
+  if(state.view === "lectures") return renderLectures(main);
+  if(state.view === "materials") return renderMaterials(main);
+  if(state.view === "tests") return renderTests(main);
+  if(state.view.startsWith("takeTest:")){
+    const tid = state.view.split(":")[1];
+    const { data: r } = await supabaseClient
+        .from("results")
+        .select("*")
+        .eq("test_id", tid)
+        .eq("user_id", state.user.id);
+
+    if (r && r.length > 0) {
+        alert("You have already completed this test.");
+        return renderTests(main);
+    }
+
+    return renderTakeTest(main, tid);
+}
+  if(state.view === "student.changePassword") return renderChangePassword(main);
+
+  // fallback
+  main.appendChild(el("div",{class:"text-gray-500"},["Unknown view"]));
+}
+
+/* =========================
+   DASHBOARD
+   (tiles to navigate instead of sidebar duplicates)
+   ========================= */
+async function renderDashboard(area){
+  clear(area);
+  area.appendChild(el("h2",{class:"text-2xl font-semibold mb-4 text-blue-700"},["Welcome to Studies"]));
+  const grid = el("div",{class:"grid grid-cols-1 md:grid-cols-2 gap-4"});
+  grid.appendChild(tile("Courses", ()=> pushView("courses")));
+  grid.appendChild(tile("Lectures", ()=> pushView("lectures")));
+  grid.appendChild(tile("Materials", ()=> pushView("materials")));
+  grid.appendChild(tile("Tests", ()=> pushView("tests")));
+  area.appendChild(grid);
+}
+
+/* =========================
+   COURSES (list + delete)
+   For students: provides 4th button "Attachments"
+   ========================= */
+async function renderCourses(area){
+  clear(area);
+  area.appendChild(el("h3",{class:"text-xl font-semibold text-blue-700 mb-3"},["Courses"]));
+  const courses = await getCourses(true);
+  if(!courses || courses.length===0){ area.appendChild(el("div",{class:"text-gray-500"},["No courses found"])); return; }
+  const grid = el("div",{class:"grid md:grid-cols-2 gap-4"});
+  courses.forEach(c=>{
+    const card = el("div",{class:"card p-3"});
+    card.appendChild(el("div",{class:"font-semibold text-blue-700"},[c.title + (c.std ? " • Std " + c.std : "")]));
+    if(c.description) card.appendChild(el("div",{class:"text-sm small-muted mb-2"},[c.description]));
+    const actions = el("div",{class:"flex flex-wrap gap-2 mt-2"});
+    const b1 = el("button",{class:"btn-outline text-sm"} ,["Lectures"]);
+    b1.addEventListener("click", ()=> { document.getElementById("app").setAttribute("data-active-course", c.id); pushView("lectures"); });
+    const b2 = el("button",{class:"btn-outline text-sm"} ,["Materials"]);
+    b2.addEventListener("click", ()=> { document.getElementById("app").setAttribute("data-active-course", c.id); pushView("materials"); });
+    const b3 = el("button",{class:"btn-outline text-sm"} ,["Tests"]);
+    b3.addEventListener("click", ()=> { document.getElementById("app").setAttribute("data-active-course", c.id); pushView("tests"); });
+    actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3);
+
+    // For students: 4th button "Attachments" (view assignments)
+    if(state.user.role !== "admin"){
+      const b4 = el("button",{class:"btn-outline text-sm"},["Assignments"]);
+      b4.addEventListener("click", async ()=>{
+        document.getElementById("app").setAttribute("data-active-course", c.id);
+        await renderAssignmentsUpload(c.id);
+      });
+      actions.appendChild(b4);
+    } else {
+      // Admin: show Delete course
+      const del = el("button",{class:"btn-outline-danger text-sm"},["Delete"]);
+      del.addEventListener("click", async ()=>{
+        if(!confirm("Are you sure?")) return;
+        await supabaseClient.from("courses").delete().eq("id", c.id);
+        alert("Deleted");
+        state.cache.courses = null;
+        render();
+      });
+      actions.appendChild(del);
+    }
+
+    card.appendChild(actions);
+    grid.appendChild(card);
+  });
+  area.appendChild(grid);
+}
+
+async function renderAssignmentsUpload(courseId){
+  const modal = el("div",{class:"fixed inset-0 bg-black/40 flex items-center justify-center z-50"});
+  const inner = el("div",{class:"bg-white p-4 rounded max-w-lg w-full max-h-[80vh] overflow-auto card"});
+
+  // Title
+  inner.appendChild(
+    el("h3",{class:"text-lg font-semibold mb-3 text-blue-700"},["Upload Assignment"])
+  );
+
+  // File input
+  const fileInput = el("input",{type:"file", class:"mb-3"});
+  inner.appendChild(fileInput);
+
+  // Upload button
+  const uploadBtn = el("button",{class:"btn-primary mb-3"},["Upload"]);
+  inner.appendChild(uploadBtn);
+
+  // Upload event
+  uploadBtn.addEventListener("click", async ()=>{
+    if(!fileInput.files.length) return alert("Please select a file");
+
+    const file = fileInput.files[0];
+    const filePath = `assignments/${courseId}/${Date.now()}_${file.name}`;
+
+    // upload to Supabase Storage
+    const { data: storageData, error: uploadErr } = await supabaseClient.storage
+      .from("assignments")
+      .upload(filePath, file);
+
+    if(uploadErr) return alert("Upload failed: " + uploadErr.message);
+
+    // get download URL
+    const { data: urlData } = supabaseClient.storage
+      .from("assignments")
+      .getPublicUrl(filePath);
+
+    // insert into assignments table
+    await supabaseClient.from("assignments").insert([{
+      id: uid("assign_"),
+      course_id: courseId,
+      filename: file.name,
+      data_url: urlData.publicUrl,
+      uploaded_at: new Date().toISOString(),
+      user_id: state.user.id
+    }]);
+
+    alert("Assignment uploaded successfully!");
+    modal.remove();
+  });
+
+  // Close button
+  const close = el("button",{class:"btn-outline mt-3"},["Close"]);
+  close.addEventListener("click", ()=> modal.remove());
+  inner.appendChild(close);
+
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+}
+
+/* Attachments popup (student view) */
+async function renderAttachmentsPopup(courseId){
+  const modal = el("div",{class:"fixed inset-0 bg-black/40 flex items-center justify-center z-top"});
+  const inner = el("div",{class:"bg-white p-4 rounded max-w-2xl w-full max-h-[80vh] overflow-auto card"});
+  inner.appendChild(el("h3",{class:"text-lg font-semibold mb-3 text-blue-700"},["Attachments"]));
+  const { data: attachments } = await supabaseClient.from("assignments").select("*").eq("course_id", courseId);
+  if(!attachments || attachments.length===0) inner.appendChild(el("div",{class:"text-gray-500"},["No attachments found"]));
+  else {
+    attachments.forEach(a=>{
+      const row = el("div",{class:"p-2 border rounded mb-2 flex justify-between items-center"});
+      row.appendChild(el("a",{href:a.data_url,target:"_blank", class:"text-link"},[a.filename || "file"]));
+      row.appendChild(el("div",{class:"text-xs small-muted"},[new Date(a.uploaded_at).toLocaleString()]));
+      inner.appendChild(row);
+    });
+  }
+  const close = el("button",{class:"btn-outline mt-3"},["Close"]);
+  close.addEventListener("click", ()=> modal.remove());
+  inner.appendChild(close);
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+}
+
+/* =========================
+   Lectures (list + delete)
+   ========================= */
+async function renderLectures(area){
+  clear(area);
+  const active = document.getElementById("app").getAttribute("data-active-course") || "";
+  let title = "Lectures"; if(active){ const { data } = await supabaseClient.from("courses").select("title").eq("id", active).maybeSingle(); title += " — " + (data?.title || ""); }
+  area.appendChild(el("h3",{class:"text-xl font-semibold text-blue-700 mb-3"},[title]));
+  const { data: lectures } = await supabaseClient.from("lectures").select("*");
+  const items = (lectures || []).filter(l => !active || l.course_id === active);
+  if(items.length===0){ area.appendChild(el("div",{class:"text-gray-500"},["No lectures found"])); return; }
+  const list = el("div",{class:"space-y-3"});
+  items.forEach(l=>{
+    const row = el("div",{class:"card p-3 flex flex-col md:flex-row md:justify-between md:items-center gap-2"});
+    row.appendChild(el("div",{},[
+      el("div",{class:"font-medium text-blue-700"},[l.title]),
+      el("div",{class:"text-xs small-muted"},[l.filename || ""])
+    ]));
+    const actions = el("div",{class:"flex flex-wrap gap-2 items-center"});
+    const open = el("a",{href:l.data_url, target:"_blank", class:"text-link"},["Open"]);
+    actions.appendChild(open);
+    // delete for admin
+    if(state.user.role === "admin"){
+      const del = el("button",{class:"btn-outline-danger text-sm"},["Delete"]);
+      del.addEventListener("click", async ()=>{
+        if(!confirm("Are you sure?")) return;
+        await supabaseClient.from("lectures").delete().eq("id", l.id);
+        alert("Deleted");
+        render();
+      });
+      actions.appendChild(del);
+    }
+    row.appendChild(actions);
+    list.appendChild(row);
+  });
+  area.appendChild(list);
+}
+
+/* =========================
+   Materials (list + delete)
+   ========================= */
+async function renderMaterials(area){
+  clear(area);
+  const active = document.getElementById("app").getAttribute("data-active-course") || "";
+  let title = "Materials"; if(active){ const { data } = await supabaseClient.from("courses").select("title").eq("id", active).maybeSingle(); title += " — " + (data?.title || ""); }
+  area.appendChild(el("h3",{class:"text-xl font-semibold text-blue-700 mb-3"},[title]));
+  const { data: materials } = await supabaseClient.from("materials").select("*");
+  const items = (materials || []).filter(m => !active || m.course_id === active);
+  if(items.length===0){ area.appendChild(el("div",{class:"text-gray-500"},["No materials found"])); return; }
+  const list = el("div",{class:"space-y-3"});
+  items.forEach(m=>{
+    const row = el("div",{class:"card p-3 flex justify-between items-center"});
+    row.appendChild(el("div",{},[
+      el("div",{class:"font-medium text-blue-700"},[m.title]),
+      el("div",{class:"text-xs small-muted"},[m.filename || ""])
+    ]));
+    const actions = el("div",{class:"flex gap-2 items-center"});
+    const open = el("a",{href:m.data_url, target:"_blank", class:"text-link"},["Open"]);
+    actions.appendChild(open);
+    if(state.user.role === "admin"){
+      const del = el("button",{class:"btn-outline-danger text-sm"},["Delete"]);
+      del.addEventListener("click", async ()=>{ if(!confirm("Are you sure?")) return; await supabaseClient.from("materials").delete().eq("id", m.id); alert("Deleted"); render(); });
+      actions.appendChild(del);
+    }
+    row.appendChild(actions);
+    list.appendChild(row);
+  });
+  area.appendChild(list);
+}
+
+/* =========================
+   Tests (list + admin edit + delete)
+   ========================= */
+async function renderTests(area){
+  clear(area);
+  const active = document.getElementById("app").getAttribute("data-active-course") || "";
+  let title = "Tests"; if(active){ const { data } = await supabaseClient.from("courses").select("title").eq("id", active).maybeSingle(); title += " — " + (data?.title || ""); }
+  area.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},[title]));
+  const tests = await getTests();
+  const items = (tests || []).filter(t => !active || t.course_id === active);
+  if(items.length===0){ area.appendChild(el("div",{class:"text-gray-500"},["No tests found"])); return; }
+  const list = el("div",{class:"space-y-3"});
+  for(const t of items){
+    const card = el("div",{class:"card p-3 flex items-center justify-between"});
+    card.appendChild(el("div",{},[
+      el("div",{class:"font-semibold text-blue-700"},[t.title]),
+      el("div",{class:"text-xs small-muted"} ,["Questions to ask: " + (t.questions_to_ask || (t.questions||[]).length)])
+    ]));
+    const actions = el("div",{class:"flex gap-2 items-center"});
+    if(state.user.role === "admin"){
+      const edit = el("button",{class:"btn-outline text-sm"},["Edit"]);
+      edit.addEventListener("click", async ()=>{
+        const { data: fresh } = await supabaseClient.from("tests").select("*").eq("id", t.id).maybeSingle();
+        window.tempEditTest = JSON.parse(JSON.stringify(fresh));
+        pushView("admin.createTest");
+      });
+      const del = el("button",{class:"btn-outline-danger text-sm"},["Delete"]);
+      del.addEventListener("click", async ()=>{ if(!confirm("Are you sure?")) return; await supabaseClient.from("tests").delete().eq("id", t.id); alert("Deleted"); state.cache.tests=null; render(); });
+      actions.appendChild(edit); actions.appendChild(del);
+    } else {
+      // student: can take test if not already taken
+      const { data: results } = await supabaseClient.from("results").select("*").eq("test_id", t.id).eq("user_id", state.user.id);
+    if(results && results.length > 0){
+      actions.appendChild(el("span",{class:"text-green-600 font-semibold mr-2"},["Completed"]));
+
+      const viewBtn = el("button",{class:"btn-outline text-sm"},["View"]);
+      viewBtn.addEventListener("click", ()=> {
+        viewSubmissionModal(results[0].id);   // open review
+    });
+
+    actions.appendChild(viewBtn);
+}
+else {
+        const take = el("button",{class:"btn-primary text-sm"},["Take Test"]);
+        take.addEventListener("click", ()=> pushView("takeTest:"+t.id));
+        actions.appendChild(take);
+      }
+    }
+    card.appendChild(actions); list.appendChild(card);
+  }
+  area.appendChild(list);
+}
+
+/* =========================
+   Create Test (admin) — editing loads correctly
+   Save blocked until questions_to_ask is filled (>0)
+   ========================= */
+async function renderCreateTest(area){
+  clear(area);
+  const wrap = el("div",{class:"card"});
+  wrap.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},["Create / Edit Test (MCQs)"]));
+  const courses = await getCourses();
+  const sel = el("select",{class:"input mb-2"});
+  sel.appendChild(el("option",{value:""},["Choose Course"]));
+  (courses||[]).forEach(c=> sel.appendChild(el("option",{value:c.id},[c.title + (c.std ? " • Std " + c.std : "")])));
+  const titleInp = el("input",{class:"input mb-2", placeholder:"Test title"});
+  const qAskRow = el("div",{class:"mb-3 flex items-center gap-2"});
+  qAskRow.appendChild(el("label",{class:"text-sm text-gray-600"},["Questions to ask:"]));
+  const qAskInput = el("input",{type:"number", min:1, class:"input w-24", placeholder:"e.g. 5"});
+  qAskRow.appendChild(qAskInput);
+  wrap.appendChild(sel); wrap.appendChild(titleInp); wrap.appendChild(qAskRow);
+  const qArea = el("div",{class:"space-y-3 mb-3"}); wrap.appendChild(qArea);
+
+  const temp = window.tempEditTest || null;
+  let questions = [];
+
+if (temp && temp.questions && Array.isArray(temp.questions)) {
+    // If editing, load questions from Supabase
+    questions = JSON.parse(JSON.stringify(temp.questions));
+}
+
+  function renderQs(){ clear(qArea); questions.forEach((q, idx)=>{
+    const box = el("div",{class:"card p-3"});
+    box.appendChild(el("div",{class:"font-medium mb-1"},["Question #"+(idx+1)]));
+    const qtxt = el("input",{class:"input mb-2", value:q.text||""}); qtxt.addEventListener("input", e=> q.text=e.target.value);
+    box.appendChild(qtxt);
+    const opts = el("div",{class:"space-y-2 mb-2"});
+    (q.options||[]).forEach(o=>{
+      const row = el("div",{class:"flex items-center gap-2"});
+      const radio = el("input",{type:"radio"}); radio.name = "correct-"+q.id; radio.checked = q.correctOptionId===o.id; radio.addEventListener("change", ()=> q.correctOptionId=o.id);
+      const optinp = el("input",{class:"input flex-1", value:o.text||""}); optinp.addEventListener("input", e=> o.text=e.target.value);
+      const del = el("button",{class:"px-2 py-0.5 text-sm text-red-600"},["x"]); del.addEventListener("click", ()=> { const i=q.options.findIndex(x=>x.id===o.id); if(i>-1) q.options.splice(i,1); renderQs(); });
+      row.appendChild(radio); row.appendChild(optinp); row.appendChild(del); opts.appendChild(row);
+    });
+    const addOpt = el("button",{class:"btn-outline text-sm mt-2"},["Add option"]); addOpt.addEventListener("click", ()=> { q.options.push({ id: uid("o_"), text:"" }); renderQs(); });
+    const delQ = el("button",{class:"btn-outline text-sm ml-2 text-red-600"},["Delete question"]); delQ.addEventListener("click", ()=> { if(!confirm("Are you sure?")) return; const i=questions.findIndex(x=>x.id===q.id); if(i>-1) questions.splice(i,1); renderQs(); });
+    box.appendChild(opts); box.appendChild(addOpt); box.appendChild(delQ); qArea.appendChild(box);
+  }); }
+
+  const addQ = el("button",{class:"btn-outline"},["Add Question"]); addQ.addEventListener("click", ()=> { questions.push({ id: uid("q_"), text:"", options:[ {id:uid("o_"), text:""}, {id:uid("o_"), text:""} ], correctOptionId:null }); renderQs(); });
+
+  const saveBtn = el("button",{class:"btn-primary mt-3"},["Save Test"]);
+  saveBtn.addEventListener("click", async ()=>{
+    const cid = sel.value; const ttitle = titleInp.value.trim(); const qAsk = parseInt(qAskInput.value);
+    if(!cid || !ttitle) return alert("Course and title required");
+    if(!qAsk || qAsk <= 0) return alert("Please fill 'Questions to ask' with a positive number");
+    if(questions.length===0) return alert("Add at least 1 question");
+    for(const q of questions){ if(!q.text) return alert("All questions must have text"); if((q.options||[]).length<2) return alert("Each question requires at least 2 options"); if(!q.correctOptionId) return alert("Each question needs a correct option selected"); }
+    const payload = { id: temp?.id || uid("t_"), course_id: cid, title: ttitle, questions: JSON.parse(JSON.stringify(questions)), questions_to_ask: qAsk, created_at: new Date().toISOString() };
+    if(temp && temp.id){ await supabaseClient.from("tests").update(payload).eq("id", temp.id); window.tempEditTest=null; alert("Test updated"); }
+    else { await supabaseClient.from("tests").insert([payload]); alert("Test created"); }
+    state.cache.tests=null; await getTests(true); pushView("tests");
+  });
+
+  wrap.appendChild(addQ); wrap.appendChild(saveBtn);
+
+  if(temp){ sel.value = temp.course_id || ""; titleInp.value = temp.title || ""; qAskInput.value = temp.questions_to_ask || (temp.questions||[]).length; 
+  
+    questions.length=0; (temp.questions || []).forEach(q => {
+    questions.push(JSON.parse(JSON.stringify(q)));
+  });
+}
+
+  renderQs(); area.appendChild(wrap);
+}
+
+/* =========================
+   Take Test (student) — randomises, stores results, shows review
+   ========================= */
+async function renderTakeTest(area, testId){
+  clear(area);
+  const { data: test } = await supabaseClient.from("tests").select("*").eq("id", testId).maybeSingle();
+  if(!test){ area.appendChild(el("div",{class:"text-red-500"},["Test not found"])); return; }
+  const totalToAsk = test.questions_to_ask || (test.questions||[]).length;
+  // copy & shuffle questions
+  const qs = JSON.parse(JSON.stringify(test.questions || []));
+  for(let i=qs.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [qs[i],qs[j]]=[qs[j],qs[i]]; }
+  const selected = qs.slice(0, totalToAsk);
+  // shuffle options for each question
+  selected.forEach(q=>{ if(q.options && q.options.length>1){ for(let i=q.options.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [q.options[i], q.options[j]]=[q.options[j], q.options[i]]; } } });
+  area.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},[test.title]));
+  const qArea = el("div",{class:"space-y-4"}); area.appendChild(qArea);
+  selected.forEach((q, idx)=>{
+    const block = el("div",{class:"card p-3"});
+    block.appendChild(el("div",{class:"font-medium mb-2"},["Q"+(idx+1)+". "+q.text]));
+    q.options.forEach(o=>{
+      const label = el("label",{class:"flex items-center gap-2 cursor-pointer"});
+      const input = el("input",{type:"radio"}); input.name = q.id; input.value = o.id;
+      label.appendChild(input); label.appendChild(el("span",{},[o.text])); block.appendChild(label);
+    });
+    qArea.appendChild(block);
+  });
+  const submitBtn = el("button",{class:"btn-primary mt-4"},["Submit"]);
+  submitBtn.addEventListener("click", async () => {
+    const answers = {};
+    let correct = 0;
+
+    selected.forEach(q => {
+        const chosen = document.querySelector(`input[name="${q.id}"]:checked`);
+        if (chosen) {
+            answers[q.id] = chosen.value;
+            if (chosen.value === q.correctOptionId) correct++;
+        }
+    });
+
+    const score = Math.round((correct / selected.length) * 100);
+
+    await supabaseClient.from("results").insert([{
+        id: uid("res_"),
+        test_id: testId,
+        user_id: state.user.id,
+        score,
+        correct,
+        total: selected.length,
+		asked_questions: JSON.stringify(selected), // ✅ NEW LINE
+        answers: JSON.stringify(answers),
+        submitted_at: new Date().toISOString()
+    }]);
+
+    alert("Test submitted successfully! Your score is: " + score);
+
+    // VERY IMPORTANT: Exit the test screen
+    pushView("tests");   // You can change to "dashboard"
+});
+  area.appendChild(submitBtn);
+}
+
+/* Student review modal */
+function showStudentAnswerReview(questions, answers, score){
+  const modal = el("div",{class:"fixed inset-0 bg-black/40 flex items-center justify-center z-top"});
+  const inner = el("div",{class:"bg-white p-4 rounded max-w-3xl w-full max-h-[80vh] overflow-auto card"});
+  inner.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},["Your Score: "+score+"%"]));
+  questions.forEach((q, idx)=>{
+    const block = el("div",{class:"p-3 border rounded mb-3 card"});
+    block.appendChild(el("div",{class:"font-medium"},["Q"+(idx+1)+". "+q.text]));
+    const ua = answers[q.id]; const userText = (q.options.find(o=>o.id===ua)||{}).text || "No answer"; const correctText = (q.options.find(o=>o.id===q.correctOptionId)||{}).text || "Unknown";
+    block.appendChild(el("div",{class:"mt-1"},["Your answer: ", el("strong",{class: ua===q.correctOptionId ? "text-green-600":"text-red-600"},[userText])]));
+    block.appendChild(el("div",{class:"text-sm small-muted"},["Correct answer: ", el("strong",{class:"text-blue-700"},[correctText])]));
+    inner.appendChild(block);
+  });
+  const close = el("button",{class:"btn-outline mt-2"},["Close"]); close.addEventListener("click", ()=> modal.remove());
+  inner.appendChild(close); modal.appendChild(inner); document.body.appendChild(modal);
+}
+
+/* Admin view submission modal (scrollable) */
+async function viewSubmissionModal(resultId){
+  const { data: r } = await supabaseClient.from("results").select("*").eq("id", resultId).maybeSingle();
+  if(!r) return alert("Submission not found");
+  const { data: test } = await supabaseClient.from("tests").select("*").eq("id", r.test_id).maybeSingle();
+  const userAnswers = typeof r.answers === "string" ? JSON.parse(r.answers) : (r.answers || {});
+  const modal = el("div",{class:"fixed inset-0 bg-black/40 flex items-center justify-center z-top"});
+  const inner = el("div",{class:"bg-white p-4 rounded max-w-4xl w-full max-h-[80vh] overflow-auto card"});
+  inner.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},[(test?.title||"Submission")+" — Score: "+r.score+"%"]));
+  const asked = typeof r.asked_questions === "string"
+  ? JSON.parse(r.asked_questions)
+  : (r.asked_questions || []);
+
+asked.forEach((q, idx)=>{
+    const block = el("div",{class:"p-3 border rounded mb-3 card"});
+    block.appendChild(el("div",{class:"font-medium"},["Q"+(idx+1)+". "+q.text]));
+    const ua = userAnswers[q.id]; const userText = (q.options.find(o=>o.id===ua)||{}).text || "No answer"; const correctText = (q.options.find(o=>o.id===q.correctOptionId)||{}).text || "Unknown";
+    block.appendChild(el("div",{class:"mt-1"},["Student answer: ", el("strong",{class: ua===q.correctOptionId?"text-green-600":"text-red-600"},[userText])]));
+    block.appendChild(el("div",{class:"text-sm small-muted"},["Correct answer: ", el("strong",{class:"text-blue-700"},[correctText])]));
+    inner.appendChild(block);
+  });
+  const close = el("button",{class:"btn-outline mt-2"},["Close"]); close.addEventListener("click", ()=> modal.remove());
+  inner.appendChild(close); modal.appendChild(inner); document.body.appendChild(modal);
+}
+
+/* =========================
+   User Management (admin)
+   - Create user: includes STD dropdown (Std 1 - 12)
+   - Search/select student dropdown (search box filters options)
+   - Delete user option (with confirmation)
+   ========================= */
+async function renderAdminUsers(area){
+  clear(area);
+  area.appendChild(el("h3",{class:"text-xl font-semibold mb-4 text-blue-700"},["User Management"]));
+  const layout = el("div",{class:"grid grid-cols-1 md:grid-cols-3 gap-4"});
+  // left: create user
+  const left = el("div",{class:"card p-3"});
+  left.appendChild(el("h4",{class:"font-semibold mb-2 text-blue-700"},["Create User"]));
+  const inName = el("input",{class:"input mb-2", placeholder:"Name"});
+  const inEmail = el("input",{class:"input mb-2", placeholder:"Email"});
+  const inPw = el("input",{class:"input mb-2", type:"password", placeholder:"Password"});
+  const selStd = el("select",{class:"input mb-2"});
+  selStd.appendChild(el("option",{value:""},["Select Std"]));
+  for(let i=1;i<=12;i++) selStd.appendChild(el("option",{value:String(i)},["Std "+i]));
+  const selRole = el("select",{class:"input mb-2"});
+  selRole.appendChild(el("option",{value:"student"},["Student"])); selRole.appendChild(el("option",{value:"admin"},["Admin"]));
+  const btnCreate = el("button",{class:"btn-primary w-full"},["Create User"]);
+  btnCreate.addEventListener("click", async ()=>{
+    const name=inName.value.trim(), email=inEmail.value.trim().toLowerCase(), pw=inPw.value.trim(), role=selRole.value, std=selStd.value;
+    if(!name||!email||!pw) return alert("All fields required");
+    const { data: exists } = await supabaseClient.from("user_profiles").select("id").eq("email", email);
+    if(exists && exists.length>0) return alert("Email exists");
+    await supabaseClient.from("user_profiles").insert([{ id: uid("u_"), name, email, password: pw, role, std: std||null, courses:[], created_at: new Date().toISOString() }]);
+    alert("User created"); render();
+  });
+  left.appendChild(inName); left.appendChild(inEmail); left.appendChild(inPw); left.appendChild(selStd); left.appendChild(selRole); left.appendChild(btnCreate);
+  layout.appendChild(left);
+
+  // right: search & select students
+  const right = el("div",{class:"col-span-1 md:col-span-2 card p-3"});
+  right.appendChild(el("h4",{class:"font-semibold mb-2 text-blue-700"},["Find Student"]));
+  const search = el("input",{class:"input mb-2", placeholder:"Search by name or email..."});
+  const select = el("select",{class:"input mb-2"}); select.appendChild(el("option",{value:""},["-- Select Student --"]));
+  async function loadStudents(filter=""){
+    const { data } = await supabaseClient.from("user_profiles").select("*").eq("role","student");
+    clear(select); select.appendChild(el("option",{value:""},["-- Select Student --"]));
+    (data||[]).filter(s => (s.name||"").toLowerCase().includes(filter) || (s.email||"").toLowerCase().includes(filter)).forEach(s=> select.appendChild(el("option",{value:s.id},[ (s.name||"") + " (" + (s.email||"") + (s.std ? " • Std "+s.std : "") + ")" ])));
+  }
+  await loadStudents();
+  search.addEventListener("input", ()=> loadStudents(search.value.trim().toLowerCase()));
+  right.appendChild(search); right.appendChild(select);
+  const detail = el("div",{class:"mt-4"}); right.appendChild(detail);
+  select.addEventListener("change", ()=> showAdminUserDetail(select.value, detail));
+  layout.appendChild(right);
+  area.appendChild(layout);
+}
+
+/* show user detail (tests & assignments) and delete user option */
+async function showAdminUserDetail(uid, container){
+  clear(container);
+  if(!uid){ container.appendChild(el("div",{class:"text-gray-500"},["Select a student"])); return; }
+  const { data: user } = await supabaseClient.from("user_profiles").select("*").eq("id", uid).maybeSingle();
+  if(!user){ container.appendChild(el("div",{class:"text-red-500"},["User not found"])); return; }
+  container.appendChild(el("div",{class:"text-xl font-bold text-blue-700"},[user.name + (user.std ? " • Std " + user.std : "")]));
+  container.appendChild(el("div",{class:"text-sm small-muted mb-3"},[user.email]));
+
+  // delete user
+  const delUser = el("button",{class:"btn-outline-danger mb-3"},["Delete User"]);
+  delUser.addEventListener("click", async ()=>{ if(!confirm("Are you sure?")) return; await supabaseClient.from("user_profiles").delete().eq("id", uid); alert("Deleted"); render(); });
+  container.appendChild(delUser);
+
+  // Test submissions
+  container.appendChild(el("h4",{class:"font-semibold mt-3 text-blue-700"},["Test Submissions"]));
+  const { data: results } = await supabaseClient.from("results").select("*").eq("user_id", uid);
+  if(!results || results.length===0) container.appendChild(el("div",{class:"text-gray-500"},["No tests taken"]));
+  else {
+    const box = el("div",{class:"space-y-2 mt-2"});
+    for(const r of results){
+      const { data: t } = await supabaseClient.from("tests").select("title").eq("id", r.test_id).maybeSingle();
+      const row = el("div",{class:"card p-2 flex justify-between items-center"});
+      row.appendChild(el("div",{},[ el("div",{class:"font-semibold text-blue-700"},[ (t?.title||r.test_id) + " — " + r.score + "%" ]), el("div",{class:"text-xs small-muted"},[ new Date(r.submitted_at).toLocaleString() ]) ]));
+      const btn = el("button",{class:"btn-outline text-sm"},["View Answers"]); btn.addEventListener("click", ()=> viewSubmissionModal(r.id));
+      row.appendChild(btn);
+      box.appendChild(row);
+    }
+    container.appendChild(box);
+  }
+
+  // Assignments
+  container.appendChild(el("h4",{class:"font-semibold mt-4 text-blue-700"},["Assignments"]));
+  const { data: assignments } = await supabaseClient.from("assignments").select("*").eq("user_id", uid);
+  if(!assignments || assignments.length===0) container.appendChild(el("div",{class:"text-gray-500"},["No assignments"]));
+  else {
+    const list = el("div",{class:"space-y-2 mt-2"});
+    assignments.forEach(a=>{
+      const row = el("div",{class:"card p-2 flex justify-between items-center"});
+      row.appendChild(el("a",{href:a.data_url, target:"_blank", class:"text-link"},[a.filename||"file"]));
+      row.appendChild(el("div",{class:"text-xs small-muted"},[new Date(a.uploaded_at).toLocaleString()]));
+      list.appendChild(row);
+    });
+    container.appendChild(list);
+  }
+}
+
+/* =========================
+   Create Course (admin) — includes STD dropdown
+   ========================= */
+function renderCreateCourse(area){
+  clear(area);
+  const wrap = el("div",{class:"card"});
+  wrap.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},["Create Course"]));
+  const title = el("input",{class:"input mb-2", placeholder:"Course Title"});
+  const desc = el("textarea",{class:"input mb-2", placeholder:"Description (optional)"});
+  const stdSel = el("select",{class:"input mb-2"});
+  stdSel.appendChild(el("option",{value:""},["Select Std"]));
+  for(let i=1;i<=12;i++) stdSel.appendChild(el("option",{value:String(i)},["Std "+i]));
+  const btn = el("button",{class:"btn-primary"},["Create Course"]);
+  btn.addEventListener("click", async ()=>{
+    const t = title.value.trim();
+    if(!t) return alert("Title required");
+    await supabaseClient.from("courses").insert([{ id: uid("c_"), title: t, description: desc.value.trim(), std: stdSel.value || null, created_at: new Date().toISOString() }]);
+    alert("Course created"); state.cache.courses=null; pushView("dashboard");
+  });
+  wrap.appendChild(title); wrap.appendChild(desc); wrap.appendChild(stdSel); wrap.appendChild(btn);
+  area.appendChild(wrap);
+}
+
+/* =========================
+   Upload Lecture (admin) — delete available
+   ========================= */
+async function renderUploadLecture(area){
+  clear(area);
+  const wrap = el("div",{class:"card"});
+  wrap.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},["Upload Lecture"]));
+  const courses = await getCourses();
+  const sel = el("select",{class:"input mb-2"}); sel.appendChild(el("option",{value:""},["Choose Course"])); (courses||[]).forEach(c=> sel.appendChild(el("option",{value:c.id},[c.title + (c.std ? " • Std "+c.std : "")])));
+  const title = el("input",{class:"input mb-2", placeholder:"Lecture title"}); const file = el("input",{type:"file", class:"mb-2"});
+  const btn = el("button",{class:"btn-primary"},["Upload"]);
+  btn.addEventListener("click", async ()=>{ if(!sel.value || !title.value.trim() || !file.files[0]) return alert("All fields required"); const f=file.files[0]; const key=uid("lec_")+"_"+f.name.replace(/\s+/g,"_"); await supabaseClient.storage.from(STORAGE_BUCKET).upload(key,f); const { data: urlData } = await supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(key); await supabaseClient.from("lectures").insert([{ id: uid("l_"), course_id: sel.value, title: title.value.trim(), filename: f.name, data_url: urlData.publicUrl, uploaded_at: new Date().toISOString() }]); alert("Lecture uploaded"); pushView("dashboard"); });
+  wrap.appendChild(sel); wrap.appendChild(title); wrap.appendChild(file); wrap.appendChild(btn); area.appendChild(wrap);
+}
+
+/* =========================
+   Upload Material (admin) — delete available
+   ========================= */
+async function renderUploadMaterial(area){
+  clear(area);
+  const wrap = el("div",{class:"card"});
+  wrap.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},["Upload Material"]));
+  const courses = await getCourses();
+  const sel = el("select",{class:"input mb-2"}); sel.appendChild(el("option",{value:""},["Choose Course"])); (courses||[]).forEach(c=> sel.appendChild(el("option",{value:c.id},[c.title + (c.std ? " • Std "+c.std : "")])));
+  const title = el("input",{class:"input mb-2", placeholder:"Material title"}); const file = el("input",{type:"file", class:"mb-2"});
+  const btn = el("button",{class:"btn-primary"},["Upload Material"]);
+  btn.addEventListener("click", async ()=>{ if(!sel.value || !title.value.trim() || !file.files[0]) return alert("All fields required"); const f=file.files[0]; const key=uid("mat_")+"_"+f.name.replace(/\s+/g,"_"); await supabaseClient.storage.from(STORAGE_BUCKET).upload(key,f); const { data:urlData } = await supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(key); await supabaseClient.from("materials").insert([{ id: uid("m_"), course_id: sel.value, title: title.value.trim(), filename: f.name, data_url: urlData.publicUrl, uploaded_at: new Date().toISOString() }]); alert("Material uploaded"); pushView("dashboard"); });
+  wrap.appendChild(sel); wrap.appendChild(title); wrap.appendChild(file); wrap.appendChild(btn); area.appendChild(wrap);
+}
+
+/* =========================
+   Change password (student)
+   ========================= */
+function renderChangePassword(area){
+  clear(area);
+  area.appendChild(el("h3",{class:"text-xl font-semibold mb-3 text-blue-700"},["Change Password"]));
+  const oldp = el("input",{class:"input mb-2", type:"password", placeholder:"Old password"});
+  const np = el("input",{class:"input mb-2", type:"password", placeholder:"New password"});
+  const cp = el("input",{class:"input mb-2", type:"password", placeholder:"Confirm new password"});
+  const btn = el("button",{class:"btn-primary"},["Update Password"]);
+  btn.addEventListener("click", async ()=>{ if(!oldp.value||!np.value||!cp.value) return alert("All fields required"); if(oldp.value !== state.user.password) return alert("Old password incorrect"); if(np.value !== cp.value) return alert("New passwords do not match"); await supabaseClient.from("user_profiles").update({ password: np.value }).eq("id", state.user.id); const { data } = await supabaseClient.from("user_profiles").select("*").eq("id", state.user.id).maybeSingle(); state.user = data; alert("Password updated"); pushView("dashboard"); });
+  area.appendChild(oldp); area.appendChild(np); area.appendChild(cp); area.appendChild(btn);
+}
+
+/* =========================
+   Boot
+   ========================= */
+render();
+
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
