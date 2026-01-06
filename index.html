@@ -174,7 +174,15 @@ hamburger.addEventListener("click",()=>{
 
   // minimal left nav: Dashboard + admin pages (no Courses/Lectures/Materials/Tests entries)
   const nav = el("div",{class:"space-y-2 mb-4 flex flex-col"});
-  const addNavBtn = (label, view) => { const b = el("button",{class:"btn-outline w-full text-left"},[label]); b.addEventListener("click", ()=> pushView(view)); nav.appendChild(b); };
+  const addNavBtn = (label, view) => { 
+  const b = el("button",{class:"btn-outline w-full text-left"},[label]); 
+  b.addEventListener("click", ()=>{ 
+    pushView(view); 
+    const sb = document.getElementById("sidebar");
+    if(sb && window.innerWidth < 768) sb.classList.add("hidden");
+  }); 
+  nav.appendChild(b); 
+};
   addNavBtn("Dashboard", "dashboard");
   if(state.user.role === "admin"){
     addNavBtn("Users", "admin.users");
@@ -859,6 +867,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
